@@ -6,83 +6,19 @@ from typing import Optional
 from datetime import datetime
 import requests
 import base64
-import webbrowser
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
 from rich.prompt import Prompt
-from rich.live import Live
 import pandas as pd
 from pathlib import Path
 from bs4 import BeautifulSoup
-from rich.text import Text
-import keyboard
-import os
-import time
+from InteractiveTable import InteractiveTable
 
-
-class InteractiveTable:
-    def __init__(self, data, columns):
-        self.data = data
-        self.columns = columns
-        self.selected_row = 0
-        self.console = Console()
-        
-    def create_table(self):
-        table = Table(show_header=True, header_style="bold green")
-        
-        # Add columns
-        for col in self.columns:
-            table.add_column(col)
-        
-        # Add rows with highlighting for selected row
-        for idx, row in enumerate(self.data):
-            style = "reverse" if idx == self.selected_row else ""
-            row_data = []
-            for cell in row:
-                if '[link=' in str(cell):
-                    # Keep link formatting as is
-                    row_data.append(cell)
-                else:
-                    row_data.append(Text(str(cell), style=style))
-            table.add_row(*row_data)
-        
-        return table
-
-    def render(self):
-        """Clear screen and render table"""
-        os.system('cls' if os.name == 'nt' else 'clear')
-        self.console.print(self.create_table())
-
-    def run(self):
-        self.render()
-        
-        while True:
-            event = keyboard.read_event()
-            
-            if event.event_type == 'down':  # Only handle key press events
-                if event.name == 'q':
-                    break
-                elif event.name == 'up' and self.selected_row > 0:
-                    self.selected_row -= 1
-                    self.render()
-                elif event.name == 'down' and self.selected_row < len(self.data) - 1:
-                    self.selected_row += 1
-                    self.render()
-                elif event.name == 'enter':
-                    apply_link = str(self.data[self.selected_row][3])
-                    if '[link=' in apply_link:
-                        url = apply_link.split('[link=')[1].split(']')[0]
-                        webbrowser.open(url)
-                        self.render()
-            
-            # Small delay to prevent high CPU usage
-            time.sleep(0.01)
 app = typer.Typer(help="Track your job applications and monitor new listings")
 console = Console()
 
-# Database setup
 DB_PATH = Path.home() / ".job_tracker.db"
 
 def init_db():
@@ -240,7 +176,6 @@ def new(days: int = typer.Option(2, help="Show listings from last N days")):
     with Progress() as progress:
         fetch_task = progress.add_task("Fetching new listings...", total=100)
         
-        # GitHub API endpoint for Simplify's README
         url = "https://api.github.com/repos/SimplifyJobs/New-Grad-Positions/contents/README.md?ref=dev"
         
         progress.update(fetch_task, advance=30)
@@ -363,22 +298,6 @@ def new(days: int = typer.Option(2, help="Show listings from last N days")):
             ]) 
     interactive_table = InteractiveTable(table_data, df.columns)
     interactive_table.run()
-
-
-    """ with Live(table, refresh_per_second=4) as live:
-        for _, row in df.iterrows():
-            if not pd.isna(row['url']):
-                apply_link = f"[link={row['url']}][#0000FF]🔗 Apply[/#0000FF][/link]"
-            else:
-                apply_link = "🔒" 
-
-            table.add_row(
-                row['company'],
-                row['position'],
-                row['location'],
-                apply_link,
-                row['date_posted'].strftime("%Y-%m-%d")
-            ) """
     
     
 
