@@ -14,7 +14,7 @@ from rich.prompt import Prompt
 import pandas as pd
 from pathlib import Path
 from bs4 import BeautifulSoup
-from .InteractiveTable import InteractiveTable
+from InteractiveTable import InteractiveTable
 
 app = typer.Typer(help="Track your job applications and monitor new listings")
 console = Console()
