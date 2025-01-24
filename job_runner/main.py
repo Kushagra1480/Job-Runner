@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import sys
+import os
+
 import typer
 import sqlite3
 from typing import Optional
@@ -14,7 +17,12 @@ from rich.prompt import Prompt
 import pandas as pd
 from pathlib import Path
 from bs4 import BeautifulSoup
-from InteractiveTable import InteractiveTable
+from job_runner.InteractiveTable import InteractiveTable
+from job_runner.DatabaseService import DatabaseService
+
+project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_dir not in sys.path:
+    sys.path.append(project_dir)
 
 app = typer.Typer(help="Track your job applications and monitor new listings")
 console = Console()
@@ -25,20 +33,15 @@ def init_db():
     """Initialize the SQLite database with required tables"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+
     # Applications table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS applications (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         company TEXT NOT NULL,
         position TEXT NOT NULL,
-        source TEXT DEFAULT 'manual',
-        status TEXT DEFAULT 'applied',
         applied_date DATETIME NOT NULL,
-        last_updated DATETIME NOT NULL,
-        url TEXT,
-        notes TEXT,
-        favorite BOOLEAN DEFAULT 0
+        url TEXT
     )
     """)
     
@@ -56,7 +59,7 @@ def init_db():
 def show_welcome():
     """Display welcome message and ASCII art banner"""
     welcome_text = """
-    🎯 [bold blue]Job Search Tracker[/bold blue] 🎯
+    🎯 [bold blue]Job Runner[/bold blue] 🎯
     Track applications & monitor new listings
     
     Commands:
@@ -133,41 +136,16 @@ def list(
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Company")
     table.add_column("Position")
-    table.add_column("Status", style="cyan")
     table.add_column("Applied Date")
-    table.add_column("Notes")
-    
-    status_emoji = {
-        "preparing": "📝",
-        "applied": "✉️",
-        "interviewing": "💬",
-        "offered": "🎉",
-        "rejected": "❌"
-    }
     
     for app in applications:
-        status = f"{status_emoji.get(app[3], '•')} {app[3]}"
-        applied_date = datetime.fromisoformat(app[5]).strftime("%Y-%m-%d")
-        notes = (app[8][:30] + "...") if app[8] and len(app[8]) > 30 else (app[8] or "")
-        
         table.add_row(
             app[1],  # company
             app[2],  # position
-            status,
-            applied_date,
-            notes
+            app[3],
         )
     
-    console.print(table)
-    
-    # Print summary statistics
-    cursor.execute("SELECT status, COUNT(*) FROM applications GROUP BY status")
-    stats = cursor.fetchall()
-    
-    console.print("\n[bold]Summary:[/bold]")
-    for status, count in stats:
-        console.print(f"{status_emoji.get(status, '•')} {status}: {count}")
-    
+    console.print(table)    
     conn.close()
 
 @app.command()
@@ -175,7 +153,7 @@ def new(days: int = typer.Option(2, help="Show listings from last N days")):
     """Check for new listings from Simplify's GitHub repo"""
     with Progress() as progress:
         fetch_task = progress.add_task("Fetching new listings...", total=100)
-        
+         
         url = "https://api.github.com/repos/SimplifyJobs/New-Grad-Positions/contents/README.md?ref=dev"
         
         progress.update(fetch_task, advance=30)
@@ -295,8 +273,9 @@ def new(days: int = typer.Option(2, help="Show listings from last N days")):
                 row['location'],
                 apply_link,
                 row['date_posted'].strftime("%Y-%m-%d")
-            ]) 
-    interactive_table = InteractiveTable(table_data, df.columns)
+            ])
+    db = DatabaseService(DB_PATH)
+    interactive_table = InteractiveTable(table_data, df.columns, db)
     interactive_table.run()
     
     
@@ -333,6 +312,7 @@ def main(
     ctx: typer.Context,
     help: bool = typer.Option(False, "--help", "-h", is_eager=True)
 ):
+    init_db()
     """Initialize app and show welcome message"""
     if not DB_PATH.exists():
         init_db()

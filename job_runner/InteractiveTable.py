@@ -7,11 +7,12 @@ from rich.console import Console
 from rich.table import Table
 
 class InteractiveTable:
-    def __init__(self, data, columns):
+    def __init__(self, data, columns, db):
         self.data = data
         self.columns = ['#'] + columns
         self.selected_row = 0
         self.console = Console()
+        self.db = db
         
     def create_table(self):
         table = Table(show_header=True, header_style="bold green")
@@ -34,6 +35,7 @@ class InteractiveTable:
         self.console.print("↓/j/nj: Move down n times (or type 'down')")
         self.console.print("enter/o/no: Open link at row n")
         self.console.print("oa: Open all links")
+        self.console.print("s: Save Application")
         self.console.print("q: Quit")
         self.console.print("\nEnter command: ", end="")
 
@@ -57,6 +59,11 @@ class InteractiveTable:
             if self.open_link(row_idx):
                 opened_count += 1
         return opened_count
+    
+    def save_all(self):
+        for row in self.data:
+            self.db.save_entry(row)
+
 
     def handle_command(self, command_string):
         if not command_string:
@@ -74,6 +81,11 @@ class InteractiveTable:
             self.selected_row = min(self.selected_row + count, len(self.data) - 1)
         elif cmd == 'k':
             self.selected_row = max(self.selected_row - count, 0)
+        elif cmd == 's':
+            self.db.save_entry(self.data[self.selected_row])
+            self.console.print('Saved Job App!')
+        elif cmd == 'sa':
+            self.save_all()
         elif cmd == 'o':
             if num:
                 row_idx = int(num) - 1
@@ -86,6 +98,8 @@ class InteractiveTable:
             opened = self.open_all_links()
             self.console.print(f"\nOpened {opened} links.")
             input("\nPress Enter when you're ready to continue...")
+        else:
+            self.console.print(f"Unknown comamnd: {cmd}")
         return True
 
         
