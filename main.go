@@ -6,6 +6,7 @@ import (
     "strings"
     "time"
 	"os/exec"
+	"fmt"
     
     tea "github.com/charmbracelet/bubbletea"
     "github.com/charmbracelet/lipgloss"
@@ -25,10 +26,96 @@ type model struct {
     height     int
 }
 
+
+func scrapeAllData() (*CacheData, error) {
+	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	var homeLinks []string
+	err := chromedp.Run(ctx, 
+		chromedp.Navigate("https://startups.gallery"),
+		chromedp.Sleep(5),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &homeLinks),
+	)
+	if err != nil {
+		return nil, err
+	}
+	homeCompanies := extractCompanies(homeLinks)
+	categoryLinks := getCategoryLinks(homeLinks)
+
+	categoryLinks["All"] = "https://startups.gallery"  
+
+	var categories []string
+	categories = append(categories, "All")
+	categoryData := make(map[string][]Company)
+	
+	categoryData["All"] = homeCompanies
+	for name, link := range categoryLinks {
+	
+		var nameLinks []string
+		err := chromedp.Run(ctx, 
+			chromedp.Navigate(link),
+			chromedp.Sleep(5),
+			chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &nameLinks),
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		var nameCompanies = extractCompanies(nameLinks)
+		categoryData[name] = nameCompanies
+	}
+	return &CacheData {
+		Date: time.Now().Format("2006-01-01"),
+		CategoryCompanyMap: categoryData,
+		CategoriesLinkMap: categoryLinks,
+	}, nil
+}
+
+func getCategoryLinks(allLinks []string) map[string]string {
+	categoryMap := make(map[string]string)
+
+	for _, link := range allLinks {
+		if strings.Contains(link, "/categories/") {
+            parts := strings.Split(link, "/")
+			categoryMap[parts[5]] = link
+		}
+	}
+	return categoryMap
+}
+
 func openInFirefox(url string) {
 	if err := exec.Command("firefox", url).Start(); err == nil {
 		return
 	}
+}
+
+func getData() (*CacheData, error) {
+	cacheFilePath := GetCacheFilePath()
+
+	if IsCacheValid(cacheFilePath) {
+        fmt.Println("📁 Loading from cache...")
+		cache, err := LoadCache(cacheFilePath)
+		if err == nil {
+			fmt.Printf("✓ Loaded %d categories from cache\n", len(cache.CategoriesLinkMap))
+			return cache, nil
+		}
+        fmt.Println("⚠️ Cache read failed, fetching fresh data...")
+	} else {
+        fmt.Println("🌐 Cache expired, fetching fresh data...")
+	}
+	cache, err := scrapeAllData()
+	if err != nil {
+		return nil, err
+	}
+
+    if err := SaveData(cacheFilePath, cache); err != nil {
+        fmt.Printf("⚠️ Failed to save cache: %v\n", err)
+    } else {
+        fmt.Println("💾 Data cached successfully!")
+    }
+	return cache, nil
 }
 
 func initialModel(companies []Company, categories []string) model {
@@ -188,24 +275,33 @@ func extractCategories(links []string) []string {
 }
 
 func main() {
-    ctx, cancel := chromedp.NewContext(context.Background())
-    defer cancel()
-
-    var allLinks []string
-
-    err := chromedp.Run(ctx,
-        chromedp.Navigate("https://startups.gallery"),
-        chromedp.Sleep(5*time.Second),
-        chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &allLinks),
-    )
-
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    companies := extractCompanies(allLinks)
-    categories := extractCategories(allLinks)
-
+    // ctx, cancel := chromedp.NewContext(context.Background())
+    // defer cancel()
+    //
+    // var allLinks []string
+    //
+    // err := chromedp.Run(ctx,
+    //     chromedp.Navigate("https://startups.gallery"),
+    //     chromedp.Sleep(5*time.Second),
+    //     chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &allLinks),
+    // )
+    //
+    // if err != nil {
+    //     log.Fatal(err)
+    // }
+    //
+    // companies := extractCompanies(allLinks)
+    // categories := extractCategories(allLinks)
+    //
+	cache, err := getData()
+	if err != nil {
+		log.Fatal(err)
+	}
+	companies := cache.CategoryCompanyMap["All"]	
+	var categories []string
+	for categoryName := range cache.CategoryCompanyMap {
+		categories = append(categories, categoryName)
+	}
     p := tea.NewProgram(initialModel(companies, categories), tea.WithAltScreen())
     if _, err := p.Run(); err != nil {
         log.Fatal(err)
