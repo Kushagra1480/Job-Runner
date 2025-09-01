@@ -130,9 +130,14 @@ func (m *model) SwitchCategory(categoryName string) {
 
 func initialModel(cache *CacheData) model {
 	companies := cache.CategoryCompanyMap["All"]	
+    desiredOrder := []string{"All", "ai", "remote", "fintech", "devtools", "design", 
+                            "productivity", "analytics", "healthcare", "seed", "pre-seed", 
+                            "series-a", "series-b", "series-c"}
 	var categories []string
-	for categoryName := range cache.CategoryCompanyMap {
-		categories = append(categories, categoryName)
+	for _, categoryName := range desiredOrder {
+		if _, exists := cache.CategoryCompanyMap[categoryName]; exists {
+			categories = append(categories, categoryName)
+		}
 	}
 	return model {
         companies: companies,
