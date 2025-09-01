@@ -226,17 +226,42 @@ func (m model) View() string {
 			Foreground(lipgloss.Color("15"))
 	}
 
-	var navItems []string
-	for i, category := range m.categories {
-		var style lipgloss.Style	
-		if i == m.selectedCategory {
-			style = selectedNavbarStyle
+	maxNavBarWidth := m.width + 10
+	var visibleNavItems []string
+	currentWidth := 0
+	startIdx := max(0, m.selectedCategory - 3)
+	endIdx := min(len(m.categories), startIdx + 6)
+
+
+	leftArrow := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Render("◀")
+    visibleNavItems = append(visibleNavItems, leftArrow)
+    currentWidth += 2
+	for i := startIdx; i < endIdx; i++ {
+		category := m.categories[i]
+		itemWidth := len(category) + 4
+
+		if currentWidth + itemWidth <= maxNavBarWidth {
+
+			var style lipgloss.Style	
+			if i == m.selectedCategory {
+				style = selectedNavbarStyle
+			} else {
+				style = navbarStyle
+			}
+			visibleNavItems = append(visibleNavItems, style.Render(category))
+			currentWidth += itemWidth
 		} else {
-			style = navbarStyle
-		}
-		navItems = append(navItems, style.Render(category))
+			break
+		}		
 	}
-	navbar := lipgloss.JoinHorizontal(lipgloss.Top, navItems...)
+	rightArrow := lipgloss.NewStyle().
+        Foreground(lipgloss.Color("8")).
+        Render("▶")
+    visibleNavItems = append(visibleNavItems, rightArrow)
+
+	navbar := lipgloss.JoinHorizontal(lipgloss.Top, visibleNavItems...)
 
     cardStyle := lipgloss.NewStyle().
         Border(lipgloss.RoundedBorder()).
