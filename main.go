@@ -18,6 +18,16 @@ type Company struct {
 	Link	string
 }
 
+type MoreCompaniesMsg struct {
+	Category string
+	Companies []Company
+}
+
+type LoadingMsg struct {
+	Category string
+	Loading bool
+}
+
 type model struct {
     companies			[]Company
     categories			[]string
@@ -27,6 +37,7 @@ type model struct {
 	navbar				bool
 	selectedCategory 	int
 	cache 				*CacheData
+	isLoading			bool
 }
 
 
@@ -181,9 +192,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} 			
         case "down", "j":
 			if !m.navbar {
-				//Add infinite scroll
-				m.selectedCompany = (m.selectedCompany + 3 + len(m.companies)) % len(m.companies)
+				if m.selectedCompany >= len(m.companies) - 3 && !m.isLoading {
+					return m, func() tea.Msg {
+						return LoadingMsg {Category: m.categories[m.selectedCategory], Loading: true}
+					}
+				}
+				m.selectedCompany = (m.selectedCompany + 3 + len(m.companies)) % len(m.companies) 				
 			}
+
         case "enter", "o":
 			if m.navbar {
 				m.SwitchCategory(m.categories[m.selectedCategory])
@@ -192,12 +208,60 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				url := m.companies[m.selectedCompany].Link
 				go openInFirefox(url)
 			}
+
 		case "n":
-			//Toggle navbar control 
 			m.navbar = !m.navbar
+
         }
+
+	case LoadingMsg:
+		if msg.Category == m.categories[m.selectedCategory] {
+			m.isLoading = msg.Loading
+			if msg.Loading {
+				return m, func() tea.Msg {
+					companies := ScrapeMoreCompanies(msg.Category, len(m.companies))
+					return MoreCompaniesMsg {Category: msg.Category, Companies: companies} 
+				}
+			}
+		}
+
+	case MoreCompaniesMsg:
+		if msg.Category == m.categories[m.selectedCategory] {
+			m.companies = append(m.companies, msg.Companies...)
+			m.cache.CategoryCompanyMap[msg.Category] = m.companies
+			m.isLoading = false
+		} 
     }
     return m, nil
+}
+
+func ScrapeMoreCompanies(category string, currentCount int) []Company {
+    ctx, cancel := chromedp.NewContext(context.Background())
+    defer cancel()
+    
+    var allLinks []string
+    err := chromedp.Run(ctx,
+        chromedp.Navigate(fmt.Sprintf("https://startups.gallery/categories/%s", category)),
+        chromedp.Sleep(2*time.Second),
+        
+        // Simulate scrolling to load more
+        chromedp.Evaluate(`window.scrollTo(0, document.body.scrollHeight)`, nil),
+        chromedp.Sleep(3*time.Second),
+        
+        chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &allLinks),
+    )
+    
+    if err != nil {
+        return []Company{} // Return empty on error
+    }
+    
+    allCompanies := extractCompanies(allLinks)
+    
+    // Return only the new companies (skip the ones we already have)
+    if len(allCompanies) > currentCount {
+        return allCompanies[currentCount:]
+    }
+    return []Company{}
 }
 
 func (m model) View() string {
@@ -303,9 +367,13 @@ func (m model) View() string {
 	if m.navbar {
         instructions = "NAVBAR MODE: ←→ to select category • Enter to switch • n to exit navbar"
 	} else {
+		loadingText := ""
+		if m.isLoading {
+			loadingText = "Loading more..."
+		}
         instructions = fmt.Sprintf(
-			"Category: %s (%d companies) • n for navbar • arrows to navigate • o/enter to open • q to quit",
-			m.categories[m.selectedCategory], len(m.companies))
+			"Category: %s (%d companies)%s • n for navbar • arrows to navigate • o/enter to open • q to quit",
+			m.categories[m.selectedCategory], len(m.companies), loadingText)
 	}
 
     instructionStyle := lipgloss.NewStyle().
