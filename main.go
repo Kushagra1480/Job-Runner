@@ -38,6 +38,7 @@ type model struct {
 	selectedCategory 	int
 	cache 				*CacheData
 	isLoading			bool
+	loadingFrame		int
 }
 
 
@@ -192,7 +193,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} 			
         case "down", "j":
 			if !m.navbar {
-				if m.selectedCompany >= len(m.companies) - 3 && !m.isLoading {
+				if m.selectedCompany >= len(m.companies) - 3 && !m.isLoading && m.categories[m.selectedCategory] != "All"{
 					return m, func() tea.Msg {
 						return LoadingMsg {Category: m.categories[m.selectedCategory], Loading: true}
 					}
@@ -335,8 +336,9 @@ func (m model) View() string {
         Height(3)
 
     selectedCardStyle := cardStyle.Copy().
-        BorderForeground(lipgloss.Color("12")).
-        Background(lipgloss.Color("0"))
+        BorderForeground(lipgloss.Color("10")).
+        Background(lipgloss.Color("0")).
+		Bold(true)
 
     var rows []string
     for i := 0; i < len(m.companies); i += 3 {
@@ -347,7 +349,7 @@ func (m model) View() string {
             company := m.companies[idx]
             var card string
             if idx == m.selectedCompany {
-                card = selectedCardStyle.Render(company.Name)
+                card = selectedCardStyle.Render(fmt.Sprintf("▶ %s", company.Name))
             } else {
                 card = cardStyle.Render(company.Name)
             }
@@ -367,13 +369,13 @@ func (m model) View() string {
 	if m.navbar {
         instructions = "NAVBAR MODE: ←→ to select category • Enter to switch • n to exit navbar"
 	} else {
-		loadingText := ""
+		loadingBar := ""
 		if m.isLoading {
-			loadingText = "Loading more..."
+			loadingBar = " • " + renderProgressBar(20)
 		}
         instructions = fmt.Sprintf(
 			"Category: %s (%d companies)%s • n for navbar • arrows to navigate • o/enter to open • q to quit",
-			m.categories[m.selectedCategory], len(m.companies), loadingText)
+			m.categories[m.selectedCategory], len(m.companies), loadingBar)
 	}
 
     instructionStyle := lipgloss.NewStyle().
@@ -383,6 +385,13 @@ func (m model) View() string {
     content := lipgloss.JoinVertical(lipgloss.Left,navbar,grid,instructionStyle.Render(instructions))
 
     return content
+}
+
+func renderProgressBar(width int) string {
+    bar := strings.Repeat("█", width/4) + strings.Repeat("░", width/4)
+    return lipgloss.NewStyle().
+        Foreground(lipgloss.Color("12")).
+        Render(bar)
 }
 
 func extractCompanies(links []string) []Company {
