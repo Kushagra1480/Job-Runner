@@ -14,16 +14,19 @@ import (
 )
 
 type Company struct {
-	name string
-	link string
+	Name	string
+	Link	string
 }
 
 type model struct {
-    companies  []Company
-    categories []string
-    selected   int
-    width      int
-    height     int
+    companies			[]Company
+    categories			[]string
+    selectedCompany  	int
+    width     			int
+    height    			int
+	navbar				bool
+	selectedCategory 	int
+	cache 				*CacheData
 }
 
 
@@ -118,11 +121,25 @@ func getData() (*CacheData, error) {
 	return cache, nil
 }
 
-func initialModel(companies []Company, categories []string) model {
-    return model{
-        companies:  companies,
-        categories: categories,
-        selected:   0,
+func (m *model) SwitchCategory(categoryName string) {
+	if companies, exists := m.cache.CategoryCompanyMap[categoryName]; exists {
+		m.companies = companies
+		m.selectedCompany = 0
+	}
+}
+
+func initialModel(cache *CacheData) model {
+	companies := cache.CategoryCompanyMap["All"]	
+	var categories []string
+	for categoryName := range cache.CategoryCompanyMap {
+		categories = append(categories, categoryName)
+	}
+	return model {
+        companies: companies,
+        categories:	categories,
+        selectedCompany: 0,
+		selectedCategory: 0,
+		cache: cache,
     }
 }
 
@@ -142,35 +159,79 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         case "q":
             return m, tea.Quit
         case "left", "h":
-            if m.selected > 0 {
-                m.selected--
-            }
+			if m.navbar {
+				m.selectedCategory = (m.selectedCategory - 1 + len(m.categories)) % len(m.categories)  
+			} else {
+				m.selectedCompany = (m.selectedCompany - 1 + len(m.companies)) % len(m.companies)
+			}
         case "right", "l":
-            if m.selected < len(m.companies)-1 {
-                m.selected++
-            }
+			if m.navbar {
+				m.selectedCategory = (m.selectedCategory + 1 + len(m.categories)) % len(m.categories)  
+			} else {
+				m.selectedCompany = (m.selectedCompany + 1 + len(m.companies)) % len(m.companies)
+			}
         case "up", "k":
-            if m.selected >= 3 {
-                m.selected -= 3
-            }
+			if !m.navbar {
+				m.selectedCompany = (m.selectedCompany - 3 + len(m.companies)) % len(m.companies)
+			} 			
         case "down", "j":
-            if m.selected+3 < len(m.companies) {
-                m.selected += 3
-            }
+			if !m.navbar {
+				//Add infinite scroll
+				m.selectedCompany = (m.selectedCompany + 3 + len(m.companies)) % len(m.companies)
+			}
         case "enter", "o":
-			url := m.companies[m.selected].link
-    		go openInFirefox(url)
+			if m.navbar {
+				m.SwitchCategory(m.categories[m.selectedCategory])
+				m.navbar = false
+			} else {
+				url := m.companies[m.selectedCompany].Link
+				go openInFirefox(url)
+			}
+		case "n":
+			//Toggle navbar control 
+			m.navbar = !m.navbar
         }
     }
     return m, nil
 }
 
 func (m model) View() string {
-    navbarStyle := lipgloss.NewStyle().
-        Foreground(lipgloss.Color("15")).
-        Background(lipgloss.Color("8")).
-        Padding(0, 1).
-        MarginBottom(1)
+	var navbarStyle, selectedNavbarStyle lipgloss.Style
+
+	if m.navbar {
+		navbarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("12")).
+			Padding(0, 1).
+			MarginBottom(1)
+		
+		selectedNavbarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color("5")).
+			Padding(0, 1).
+			MarginBottom(1)
+	} else {
+		navbarStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Background(lipgloss.Color("0")).
+			Padding(0, 1).
+			MarginBottom(1)
+
+		selectedNavbarStyle = navbarStyle.Copy().
+			Foreground(lipgloss.Color("15"))
+	}
+
+	var navItems []string
+	for i, category := range m.categories {
+		var style lipgloss.Style	
+		if i == m.selectedCategory {
+			style = selectedNavbarStyle
+		} else {
+			style = navbarStyle
+		}
+		navItems = append(navItems, style.Render(category))
+	}
+	navbar := lipgloss.JoinHorizontal(lipgloss.Top, navItems...)
 
     cardStyle := lipgloss.NewStyle().
         Border(lipgloss.RoundedBorder()).
@@ -183,12 +244,6 @@ func (m model) View() string {
         BorderForeground(lipgloss.Color("12")).
         Background(lipgloss.Color("0"))
 
-    var navItems []string
-    for _, category := range m.categories {
-        navItems = append(navItems, navbarStyle.Render(category))
-    }
-    navbar := lipgloss.JoinHorizontal(lipgloss.Top, navItems...)
-
     var rows []string
     for i := 0; i < len(m.companies); i += 3 {
         var row []string
@@ -197,10 +252,10 @@ func (m model) View() string {
             idx := i + j
             company := m.companies[idx]
             var card string
-            if idx == m.selected {
-                card = selectedCardStyle.Render(company.name)
+            if idx == m.selectedCompany {
+                card = selectedCardStyle.Render(company.Name)
             } else {
-                card = cardStyle.Render(company.name)
+                card = cardStyle.Render(company.Name)
             }
             row = append(row, card)
         }
@@ -213,18 +268,21 @@ func (m model) View() string {
         rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
     }
     grid := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	var instructions string
+	
+	if m.navbar {
+        instructions = "NAVBAR MODE: ←→ to select category • Enter to switch • n to exit navbar"
+	} else {
+        instructions = fmt.Sprintf(
+			"Category: %s (%d companies) • n for navbar • arrows to navigate • o/enter to open • q to quit",
+			m.categories[m.selectedCategory], len(m.companies))
+	}
 
-    instructions := lipgloss.NewStyle().
+    instructionStyle := lipgloss.NewStyle().
         Foreground(lipgloss.Color("8")).
-        MarginTop(2).
-        Render("use arrow or vim keys for nav / q to quit")
+        MarginTop(2)
 
-    content := lipgloss.JoinVertical(
-        lipgloss.Left,
-        navbar,
-        grid,
-        instructions,
-    )
+    content := lipgloss.JoinVertical(lipgloss.Left,navbar,grid,instructionStyle.Render(instructions))
 
     return content
 }
@@ -239,8 +297,8 @@ func extractCompanies(links []string) []Company {
                 companyName = strings.ReplaceAll(companyName, "-", " ")
                 companyName = strings.Title(companyName)
   				var c = Company {
-					name: companyName,
-					link: link,
+					Name: companyName,
+					Link: link,
 				}
 				companies = append(companies, c)
             }
@@ -275,34 +333,11 @@ func extractCategories(links []string) []string {
 }
 
 func main() {
-    // ctx, cancel := chromedp.NewContext(context.Background())
-    // defer cancel()
-    //
-    // var allLinks []string
-    //
-    // err := chromedp.Run(ctx,
-    //     chromedp.Navigate("https://startups.gallery"),
-    //     chromedp.Sleep(5*time.Second),
-    //     chromedp.Evaluate(`Array.from(document.querySelectorAll('a')).map(a => a.href)`, &allLinks),
-    // )
-    //
-    // if err != nil {
-    //     log.Fatal(err)
-    // }
-    //
-    // companies := extractCompanies(allLinks)
-    // categories := extractCategories(allLinks)
-    //
 	cache, err := getData()
 	if err != nil {
 		log.Fatal(err)
 	}
-	companies := cache.CategoryCompanyMap["All"]	
-	var categories []string
-	for categoryName := range cache.CategoryCompanyMap {
-		categories = append(categories, categoryName)
-	}
-    p := tea.NewProgram(initialModel(companies, categories), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(cache), tea.WithAltScreen())
     if _, err := p.Run(); err != nil {
         log.Fatal(err)
     }

@@ -9,8 +9,8 @@ import (
 
 type CacheData struct {
 	Date 				string `json:"date"`
-	CategoryCompanyMap 	map[string][]Company `json:"companies"`
-	CategoriesLinkMap 	map[string]string `json:"categories"`
+	CategoryCompanyMap 	map[string][]Company `json:"category_company_map"`
+	CategoriesLinkMap 	map[string]string `json:"categories_link_map"`
 }
 
 func GetCacheFilePath() string {
